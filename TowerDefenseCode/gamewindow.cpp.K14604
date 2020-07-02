@@ -1,0 +1,246 @@
+#include "gamewindow.h"
+#include <QDebug>
+#include <QMap>
+#include "generatepath.h"   //生成路径类
+#include <QTimer>
+
+//鼠标点击区域宏
+#define MouClickRegion(X, Y, Width, Height)     \
+(ev->x() >= (X) && ev->x() <= (X) + (Width) &&  \
+ev->y() >= (Y) && ev->y() <= (Y) + (Height))
+
+
+GameWindow::GameWindow(int mapArr[][13])
+{
+    setFixedSize(1040, 640);
+    setWindowTitle("gamewindow");
+
+    //把参数数组拷贝给成员数组
+    memcpy(this->mapArr, mapArr, sizeof(this->mapArr));
+
+    //地图数组值对应的图片路径
+    mapValuePicturePathMap.insert(0, "../PictureMaterial/map_block_wall.png");
+    mapValuePicturePathMap.insert(1, "../PictureMaterial/map_block_monster_path.png");
+    mapValuePicturePathMap.insert(2, "../PictureMaterial/map_block_monster_path.png");
+    mapValuePicturePathMap.insert(3, "../PictureMaterial/map_block_tower_ocation.png");
+    mapValuePicturePathMap.insert(4, "../PictureMaterial/map_block_monster_path.png");
+
+    //得到生成路径
+    QVector<QVector<int*>> tempVec = GeneratePath().getPathVec(mapArr);
+
+    //将int*类型路径转换为Coor*
+    for (int j = 0; j < tempVec.size(); j++)          //每条路径
+    {
+        QVector<Coor> enemytempVec_1;
+        for (int i = 0; i < tempVec[j].size(); i++)   //每个元素
+            enemytempVec_1.push_back({ tempVec[j][i][0] * mapBlockLen, tempVec[j][i][1] * mapBlockLen});
+
+        enemyPathsVec.push_back(enemytempVec_1);
+    }
+
+    //用于产生怪物定时器
+    QTimer* timer1 = new QTimer(this);
+    timer1->start(2000);
+
+    int counter = 0;    //计数器
+    connect(timer1,&QTimer::timeout,[=]() mutable
+    {
+        if(counter >= 0 && counter <= 10)
+        {
+            enemyVec.push_back(new Enemy_1(enemyPathsVec[0]));
+
+        }
+
+        counter++;
+    });
+
+
+    //游戏进行，主定时器
+    QTimer* timer2 = new QTimer(this);
+    timer2->start(110);
+
+    connect(timer2,&QTimer::timeout,[=]()
+    {
+        for (auto enemyIt = enemyVec.begin(); enemyIt != enemyVec.end(); enemyIt++)
+        {
+            if((*enemyIt)->move())  //怪物移动
+            {
+                enemyVec.erase(enemyIt);
+                break;
+            }
+        }
+
+        update();
+    });
+
+
+//enemyVec敌人数组
+//enemyPathsVec敌人路径数组
+}
+
+//画出地图
+void GameWindow::drawMap(QPainter& painter)
+{
+//    0 墙壁   1 怪物路径   2 怪物出生点   3 防御塔位置   4 堡垒
+    Coor fortressCoor;      //记录堡垒的坐标
+
+    for(int j = 0; j < 8; j++)
+        for(int i = 0; i < 13; i++)
+        {
+            switch (mapArr[j][i]) {
+            case 1:
+                //将怪物路径点坐标插入到数组
+//                monsterPathPointsVec.push_back(Coor(i * mapBlockLen, j * mapBlockLen));
+                break;
+            case 4:
+                //记录下堡垒的坐标
+                fortressCoor.x = i * mapBlockLen, fortressCoor.y = j * mapBlockLen;
+//                monsterPathPointsVec.push_back(Coor(i * mapBlockLen, j * mapBlockLen));
+                break;
+            case 3:
+                //将防御塔的坐标插入到数组
+                towerPositionsVec.push_back(Coor(i * mapBlockLen, j * mapBlockLen));
+                break;
+            }
+
+            //根据地图值画出不同图片
+            painter.drawPixmap(i * mapBlockLen, j * mapBlockLen, mapBlockLen, mapBlockLen,
+                QPixmap(mapValuePicturePathMap[mapArr[j][i]]));
+        }
+
+
+    //最后画出堡垒
+    painter.drawPixmap(fortressCoor.x, fortressCoor.y, mapBlockLen, mapBlockLen,
+        QPixmap("../PictureMaterial/map_block_fortress.png"));
+}
+
+//画出选择框
+void GameWindow::drawSelectionFrame(QPainter& painter)
+{
+    if(!selectionFrame.getDisplay()) return;    //选择框显示状态为假则返回
+
+    painter.drawPixmap
+        (selectionFrame.getCoor().x, selectionFrame.getCoor().y,
+         selectionFrame.getSelSideLength(), selectionFrame.getSelSideLength(),
+        QPixmap(selectionFrame.getPicturePath()));
+
+    //画出子按钮
+    for(int i = 0; i < 4; i++)
+    {
+        painter.drawPixmap(selectionFrame.getChildButtonArr()[i].x, selectionFrame.getChildButtonArr()[i].y,
+            selectionFrame.getButSideLength(), selectionFrame.getButSideLength(),
+            QPixmap(selectionFrame.getChildButtonArr()[i].picturePath));
+
+        //画出防御塔图片
+        painter.drawPixmap(selectionFrame.getChildButtonArr()[i].x + 10, selectionFrame.getChildButtonArr()[i].y + 10,
+            selectionFrame.getButSideLength() - 20, selectionFrame.getButSideLength() - 20,
+            QPixmap(selectionFrame.getTowerPicturePathArr()[i]));
+    }
+}
+
+void GameWindow::drawTower(QPainter& painter)          //画出防御塔
+{
+    for(auto &tower : towerVec)
+    {
+        const int blockHalfLen = mapBlockLen >> 1; //地图块边长一半的长度
+        //画出防御塔
+        painter.translate(tower->getCoor().x + blockHalfLen, tower->getCoor().y + blockHalfLen);     //设置旋转中心
+        painter.rotate(tower->getAngle() + 90);                     //旋转角度
+        painter.translate(-(tower->getCoor().x + blockHalfLen), -(tower->getCoor().y + blockHalfLen));    //原点复位
+
+        qDebug() << tower->getCoor().x << "  " << tower->getCoor().y <<"  "<< tower->getWidth() <<"  "<< tower->getHeight() <<"  "<< tower->getPicturePath();
+        painter.drawPixmap(tower->getCoor().x, tower->getCoor().y, tower->getWidth(), tower->getHeight(), QPixmap(tower->getPicturePath()));
+        painter.resetTransform();   //重置调整
+    }
+}
+
+void GameWindow::drawEnemy(QPainter& painter)   //画出敌人
+{
+    for(auto &enemy : enemyVec)
+    {
+        painter.drawPixmap(enemy->getCoor().x, enemy->getCoor().y, enemy->getWidth(), enemy->getHeight(), enemy->getPicturePath());
+    }
+
+}
+
+void GameWindow::paintEvent(QPaintEvent*)
+{
+    QPainter painter(this);
+
+    drawMap(painter);       //画出地图
+    drawTower(painter);     //画出防御塔
+    drawEnemy(painter);     //画出怪物
+
+    drawSelectionFrame(painter);    //画出选择框
+}
+
+//鼠标点击事件
+void GameWindow::mousePressEvent(QMouseEvent* ev)
+{
+    if (ev->button() != Qt::LeftButton)
+        return;
+
+    //选择框为显示状态时判断子按钮点击
+    if(selectionFrame.getDisplay())
+    {
+        for (int i = 0; i < 4; i++)
+            if (MouClickRegion (
+                selectionFrame.getChildButtonArr()[i].x, selectionFrame.getChildButtonArr()[i].y,
+                selectionFrame.getButSideLength(), selectionFrame.getButSideLength()))
+            {
+                //防御塔位置原坐标
+                const Coor towerPoscoor(selectionFrame.getCoor().x + ((selectionFrame.getSelSideLength() - mapBlockLen) >> 1),
+                    selectionFrame.getCoor().y + ((selectionFrame.getSelSideLength() - mapBlockLen) >> 1));
+
+                //根据i将不同的防御塔对象插入到数组
+                switch (i) {
+                case 0:
+                    towerVec.push_back(new DefenseTower_1(towerPoscoor.x, towerPoscoor.y));
+                    break;
+                case 1:
+                    towerVec.push_back(new DefenseTower_2(towerPoscoor.x, towerPoscoor.y));
+                    break;
+                case 2:
+                    towerVec.push_back(new DefenseTower_3(towerPoscoor.x, towerPoscoor.y));
+                    break;
+                case 3:
+                    towerVec.push_back(new DefenseTower_4(towerPoscoor.x, towerPoscoor.y));
+                }
+
+                selectionFrame.setDisplay(false);
+                update();
+                return;
+            }
+    }
+
+    //判断防御塔位置的点击
+    for (auto towerPosition : towerPositionsVec)
+        if (MouClickRegion(towerPosition.x, towerPosition.y, mapBlockLen, mapBlockLen))
+        {
+            for (auto tower : towerVec) //检查当前位置上是否已经有防御塔
+                if (tower->getCoor().x == towerPosition.x && tower->getCoor().y == towerPosition.y)
+                {
+                    selectionFrame.setDisplay(false);
+                    update();
+                    return;
+                }
+
+            //设置选择框坐标
+            selectionFrame.setCoor
+                (towerPosition.x - ((selectionFrame.getSelSideLength() - mapBlockLen) >> 1),
+                 towerPosition.y - ((selectionFrame.getSelSideLength() - mapBlockLen) >> 1));
+            selectionFrame.setDisplay(true);    //设置选择框的显示状态为true
+
+            update();   //调用绘图函数
+            return;
+        }
+
+
+    selectionFrame.setDisplay(false);   //点击其他地方则取消显示选择框
+    update();
+}
+
+GameWindow::~GameWindow()
+{
+
+}

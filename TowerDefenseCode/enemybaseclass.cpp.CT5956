@@ -1,0 +1,27 @@
+#include "enemybaseclass.h"
+
+//初始化怪物的坐标
+EnemyBaseClass::EnemyBaseClass(QVector<Coor> path) : SFCB(path.at(0).x, path.at(0).y)
+{
+
+}
+
+Coor EnemyBaseClass::getCoor() const     //返回坐标
+{
+    return Coor(x, y);
+}
+
+QString EnemyBaseClass::getPicturePath() const//返回图片路径
+{
+    return picturePath;
+}
+
+int EnemyBaseClass::getWidth() const     //返回宽高
+{
+    return width;
+}
+
+int EnemyBaseClass::getHeight() const
+{
+    return height;
+}
